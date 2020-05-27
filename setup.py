@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='RoutePlotter',
-      version='1.0',
+      version='1.1',
       description='Scanning spectrometer flight-route calculator with gui',
       author='Matthew Westphall',
       author_email='w.matthew.he@gmail.com',
