@@ -445,6 +445,7 @@ var setScanSpeed=function(speed){
 var createPathCallback= function(coords,bounds,dist,speed,pxsize,scanlines){
     coords = _.map(coords,cleanPyCoords);
     bounds = _.map(bounds,cleanPyCoords);
+    $('#scan_passes').html(scanlines.length);
     if(UNITS=='US'){
         $('#scan_len').html(Math.round(km2mi(dist)));
         $('#px_size').html(m2ft(pxsize).toFixed(2));
