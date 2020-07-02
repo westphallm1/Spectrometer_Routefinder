@@ -93,7 +93,9 @@ class External(object):
         self._region = None
         self._spectrometer = None
         self._vehicle="fullscale"
-        self._overshoot = 30 
+        self._overshoot = 30
+        self._trigstart = 0.5
+        self._trigend = 0.5
         self._sidelap = .2
         self._names = []
         self.p = None
@@ -109,6 +111,14 @@ class External(object):
     def setOvershoot(self,val):
         if(self._isfloat(val)):
             self._overshoot = max(1,float(val))
+
+    def setTrigStart(self,val):
+        if(self._isfloat(val)):
+            self._trigstart = float(val)/100.0
+
+    def setTrigEnd(self,val):
+        if(self._isfloat(val)):
+            self._trigend = float(val)/100.0
 
     def setSidelap(self,val):
         if(self._isfloat(val)):
@@ -177,13 +187,19 @@ class External(object):
         self._bearing = meta['bearing'][0]
         self._sidelap = meta['sidelap'][0]
         self._overshoot = meta['approach'][0]
+        try:
+            self._trigstart = float(meta['trigstart'][0])
+            self._trigend = float(meta['trigend'][0])
+        except:
+            self._trigstart = 0.5
+            self._trigend = 0.5
         #print(self._alt,self._bearing,self._sidelap,self._overshoot)
 
         self._spectrometer = spectrometer
         self.js_callback.Call(coords,self._vehicle,self._alt,self._bearing,
                 self._sidelap*100,self._overshoot, spectrometer.fieldOfView,
                 spectrometer.crossFieldOfView,spectrometer._px,
-                spectrometer._name,meta['name']
+                spectrometer._name,meta['name'],self._trigstart,self._trigend
         )
 
     def polygonizePoints(self,points,js_callback):
@@ -207,6 +223,8 @@ class External(object):
         region.setBearing(self._bearing)
         region.setSidelap(self._sidelap)
         region.setOvershoot(self._overshoot)
+        region.setTrigStart(self._trigstart)
+        region.setTrigEnd(self._trigend)
 
         region.setFindScanLineBounds(True)
         scanner = self._spectrometer or Spectrometer.HeadwallNanoHyperspec()
@@ -216,12 +234,14 @@ class External(object):
         try:
             region.findScanLines()
             coords = region.flattenCoords()
+            trigCoords = region.flattenTrigCoords()
             bounds= region.boundBox
             scanlines=region.scanLineBoundBoxes
+            trigBoxes = region.triggerBoundBoxes
             dist = "%.2f"%(region.totalScanLength/1000)
             speed = "%.2f"%region.scanVelocity
             self._region = region
-            js_callback.Call(coords,bounds,dist,speed,px_size,scanlines)
+            js_callback.Call(coords,bounds,dist,speed,px_size,scanlines,trigCoords,trigBoxes)
         except ScanArea.ScanLineDensityError:
             err_callback.Call()
 

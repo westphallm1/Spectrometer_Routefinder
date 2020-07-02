@@ -49,7 +49,7 @@ def coordDictListToCoord2DList(coord_dict_list, alt=0):
 
 
 def planOutlineFromCoords(fname, regions, alt, approach, bearing, sidelap,
-                          inst, names, vehic='fullscale', units='US'):
+                          inst, names, vehic='fullscale', units='US', starttrig=0.5, endtrig=0.5):
     polyw = shapefile.Writer(fname, shapeType=shapefile.POLYGON)
     polyw.field('name', 'C', 40)
     polyw.field('alt', 'F', 12)
@@ -63,6 +63,8 @@ def planOutlineFromCoords(fname, regions, alt, approach, bearing, sidelap,
     polyw.field('pixels', 'F', 10)
     polyw.field('vehicle', 'C', 20)
     polyw.field('units', 'C', 10)
+    polyw.field('trigstart', 'F', 6, 2)
+    polyw.field('trigend', 'F', 6, 2)
     for area, name in zip(regions, names):
         bounds = coordDictListToCoord2DList(area, 0)
         polyw.poly(bounds)
@@ -79,12 +81,14 @@ def planOutlineFromCoords(fname, regions, alt, approach, bearing, sidelap,
             inst.crossFieldOfView,
             inst.pixels,
             vehic,
-            units
+            units,
+            starttrig,
+            endtrig
         )
     #polyw.save(fname)
     polyw.close()
 #TODO: alt and speed do not seem to be used in writing shp files?
-def flightPlanFromCoords(outpath, coords, scanlinebounds, alt, speed):
+def flightPlanFromCoords(outpath, coords, scanlinebounds, alt, speed, trigcoords=None):
     if not os.path.isdir(outpath):
         os.makedirs(outpath)
     linew = shapefile.Writer(os.path.join(outpath, 'scanlines'), shapeType=shapefile.POLYLINEZ)
@@ -94,6 +98,18 @@ def flightPlanFromCoords(outpath, coords, scanlinebounds, alt, speed):
     pointw = shapefile.Writer(os.path.join(outpath, 'points'), shapeType=shapefile.POINTZ)
     pointw.field('idx', 'N', 10)
     pointw.field('type', 'C', 40)
+
+    trigpointsw = None
+    triglinesw = None
+    if trigcoords:
+        trigpointsw = shapefile.Writer(os.path.join(outpath, 'trigger_points'), shapeType=shapefile.POINTZ)
+        triglinesw = shapefile.Writer(os.path.join(outpath, 'trigger_lines'), shapeType=shapefile.POLYLINEZ)
+
+        trigpointsw.field('idx', 'N', 10)
+        trigpointsw.field('type', 'C', 40)
+
+        triglinesw.field('idx', 'N', 10)
+
     for i in range(int(len(coords) / 4)):
         # write the scan area first
         bounds = coordDictListToCoord2DList(scanlinebounds[i], 0)
@@ -112,9 +128,19 @@ def flightPlanFromCoords(outpath, coords, scanlinebounds, alt, speed):
         pointw.pointz(*line[0][3])
         [pointw.record(i, p) for p in ["START", "ENTER", "EXIT", "END"]]
 
+        if trigcoords:
+            trigline = coordDictListToCoord2DList(trigcoords[i])
+            triglinesw.linez(trigline)
+            triglinesw.record(i)
+
+            trigpointsw.pointz(*trigline[0][0])
+            trigpointsw.pointz(*trigline[0][1])
+            for p in ["START","END"]:
+                trigpointsw.record(i,p)
+
     linew.close()
     footw.close()
     pointw.close()
-    #linew.save(os.path.join(outpath, 'scanlines'))
-    #footw.save(os.path.join(outpath, 'footprints'))
-    #pointw.save(os.path.join(outpath, 'points'))
+    if trigcoords:
+        triglinesw.close()
+        trigpointsw.close()

@@ -105,6 +105,16 @@
                       a larger value can give a pilot more time to align their flight path.
                       </p>
                       <p>
+                          <strong>Trigger Start</strong> specifies where along the approach to
+                          trigger the spectrometer to start.  100% starts the spectrometer as soon as approach
+                          begins, and 0% starts at the exact edge of the scan area.
+                      </p>
+                      <p>
+                          <strong>Trigger Stop</strong> specifies where along the approach to
+                          trigger the spectrometer to stop.  100% starts the spectrometer as the end of the exit approach
+                          end, and 0% stops at the exact edge of the scan area.
+                      </p>
+                      <p>
                       <strong>Bearing</strong> is the angle at which scan lines will pass through the scan
                       area. It is given relative to North.
                       </p>
@@ -375,11 +385,19 @@
             <table><tbody>
             <tr>
                 <td id="alt_label">Altitude (ft):</td>
-                <td><input type="text" style="width:3em" id="alt"value=3000></span></td>
+                <td><input type="text" style="width:3em" id="alt"value=3000></td>
             </tr>
             <tr>
                 <td id="appr_label">Approach (mi):</td>
-                <td><input type="text" style="width:3em" id="overshoot"value=1></span></td>
+                <td><input type="text" style="width:3em" id="overshoot"value=1></td>
+            </tr>
+            <tr>
+                <td>Trigger Start (%):</td>
+                <td><input type="text" style="width:3em" id="trigstart" value="50"></td>
+            </tr>
+            <tr>
+                <td>Trigger End (%):</td>
+                <td><input type="text" style="width:3em" id="trigend" value="50"</td>
             </tr>
             <tr>
                 <td>Bearing (&deg;):</td>
