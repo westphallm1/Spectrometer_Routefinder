@@ -11,9 +11,9 @@ setup(name='RoutePlotter',
       package_data={'': ['**/**/*.js','**/**/*.html','**/**/*.css','**/**/*.png']},
       scripts=['scan_route_plotter'],
       install_requires=[
-        'pyshp (2.1.0)',
-        'cefpython3',
-        'lxml',
-        'numpy'
+        'pyshp==2.1.0',
+        'cefpython3==66.0',
+        'lxml==4.5.2',
+        'numpy==1.19.0'
       ],
      )
