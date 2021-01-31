@@ -312,14 +312,20 @@ var setHomeMarker = function(latlng){
 
 var scanLines=[];
 var scanLineBounds=[];
+var trigLines=[];
+var trigLinesBounds=[];
 var scanPath;
 
-var setAirplaneScanPath = function(latlngs,scanlines){
+
+
+var setAirplaneScanPath = function(latlngs,scanlines,triggLines,triggBounds){
     if(scanPath) scanPath.setMap(null);
     if(homeMarker) homeMarker.setMap(null);
     if(scanLines.length > 0){
         _.each(scanLines,(line)=>line.setMap(null));
         _.each(scanLineBounds,(box)=>box.setMap(null));
+        _.each(trigLines,(line)=>line.setMap(null));
+        _.each(trigLinesBounds,(box)=>box.setMap(null));
     };
     
     _.each(_.groupBy(latlngs,(ll,idx)=>Math.floor(idx/4)),function(lls,idx){
@@ -333,13 +339,31 @@ var setAirplaneScanPath = function(latlngs,scanlines){
             zIndex:999
         }));
         scanLineBounds.push(new google.maps.Polygon({
-                paths:_.map(scanlines[idx],(c)=>cleanPyCoords(c)),
-                strokeColor:'#0000ff',
-                strokeOpacity:0,
-                strokeWeight:0,
-                fillColor: '#4B0082',
-                fillOpacity: 0.40,
-                map:map
+            paths:_.map(scanlines[idx],(c)=>cleanPyCoords(c)),
+            strokeColor:'#0000ff',
+            strokeOpacity:0,
+            strokeWeight:0,
+            fillColor: '#4B0082',
+            fillOpacity: 0.40,
+            map:map,
+        }));
+        trigLines.push(new google.maps.Polyline({
+            path:_.map(triggLines[idx],(c)=>cleanPyCoords(c)),
+            geodesic:true,
+            strokeColor: '#00FF00',
+            strokeOpacity:1.0,
+            strokeWeight: 4,
+            map:map,
+            zIndex:999
+        }));
+        trigLinesBounds.push(new google.maps.Polygon({
+            paths:_.map(triggBounds[idx],(c)=>cleanPyCoords(c)),
+            strokeColor:'#0000ff',
+            strokeOpacity:0,
+            strokeWeight:0,
+            fillColor: '#00CC82',
+            fillOpacity: 0.20,
+            map: map
         }));
     });
 
@@ -442,9 +466,10 @@ var setScanSpeed=function(speed){
     }
 };
 
-var createPathCallback= function(coords,bounds,dist,speed,pxsize,scanlines){
+var createPathCallback= function(coords,bounds,dist,speed,pxsize,scanlines,trigCoords,trigBoxes){
     coords = _.map(coords,cleanPyCoords);
     bounds = _.map(bounds,cleanPyCoords);
+    $('#scan_passes').html(scanlines.length);
     if(UNITS=='US'){
         $('#scan_len').html(Math.round(km2mi(dist)));
         $('#px_size').html(m2ft(pxsize).toFixed(2));
@@ -454,7 +479,7 @@ var createPathCallback= function(coords,bounds,dist,speed,pxsize,scanlines){
     }
     setScanSpeed(speed);
     if($('#vehicle').val()=='fullscale')
-        setAirplaneScanPath(coords,scanlines);
+        setAirplaneScanPath(coords,scanlines,trigCoords,trigBoxes);
     else
         setScanPath(coords);
 
@@ -474,7 +499,7 @@ var createPathFailedCallback = function(){
 }
 
 var loadFileCallback = function(coords,vehicle,alt,bearing,sidelap,
-                                overshoot,fov,ifov,px,s_name,p_names){
+                                overshoot,fov,ifov,px,s_name,p_names,trigstart,trigend){
     if(UNITS=='US'){
         alt = m2ft(alt);
         overshoot = km2mi(overshoot/1000);
@@ -492,6 +517,8 @@ var loadFileCallback = function(coords,vehicle,alt,bearing,sidelap,
     $('#ifov').val(ifov);
     $('#px').val(px);
     $('#spectrometer').val(s_name);
+    $('#trigstart').val(trigstart*100);
+    $('#trigend').val(trigend*100);
     _.each(coords,function(perim,idx){
         perim = _.map(perim,cleanPyCoords);
         userDrawnRegion.addPolyFromCoords(perim,p_names[idx]);
@@ -591,6 +618,14 @@ $(document).ready(function(){
             external.setOvershoot(5280*ft2m($(this).val()));
 	else
             external.setOvershoot(1000*$(this).val());
+        generatePath();
+    });
+    $('#trigstart').change(function(){
+        external.setTrigStart($(this).val());
+        generatePath();
+    });
+    $('#trigend').change(function(){
+        external.setTrigEnd($(this).val());
         generatePath();
     });
     $('#sidelap').change(function(){

@@ -117,6 +117,8 @@ class ScanArea(object):
         self.setBearing(bearing)
         self._buildEdges()
         self._coords = []
+        self._trigCoords = []
+        self._trigBounds = []
         self._alt = alt
         self._spectrometer = spectrometer
         self._name = name
@@ -124,6 +126,8 @@ class ScanArea(object):
         self._waypoints = []
         self._sidelap = 0
         self._overshoot = 0
+        self._trigstart = 0.5
+        self._trigend = 0.5
         self._find_bounds = find_scanline_bounds
         self._scanline_bounds = []
     
@@ -134,6 +138,11 @@ class ScanArea(object):
         #distance to pass beyond borders of scanarea before turning
         #useful for fullscale flight vehicles
         self._overshoot = overshoot
+    def setTrigStart(self, trigstart):
+        self._trigstart = trigstart
+
+    def setTrigEnd(self,trigend):
+        self._trigend = trigend
 
     def setFindScanLineBounds(self,find_bounds):
         self._find_bounds = find_bounds
@@ -170,6 +179,14 @@ class ScanArea(object):
     @property
     def scanLineBoundBoxes(self):
         return self._scanline_bounds
+
+    @property
+    def triggerBoundBoxes(self):
+        return self._trigBounds
+
+    @property
+    def trigCoords(self):
+        return self._trigCoords
 
     def _computeCenter(self,perimeter):
         """Find the center of the set of points. This is the cartesian center
@@ -246,6 +263,20 @@ class ScanArea(object):
 
         self._scanline_bounds.append(bound_box)
 
+    def _addTrigLineBoundBox(self,trig_edge):
+        bound_box = []
+        normal_dir = (trig_edge.bearing+90)%360
+        antinormal_dir = (normal_dir+180)%360
+        bound_box.append(llmath.atDistAndBearing(trig_edge.start,
+            self._scanline_width/18,normal_dir))
+        bound_box.append(llmath.atDistAndBearing(trig_edge.start,
+            self._scanline_width/18,antinormal_dir))
+        bound_box.append(llmath.atDistAndBearing(trig_edge.end,
+            self._scanline_width/18,antinormal_dir))
+        bound_box.append(llmath.atDistAndBearing(trig_edge.end,
+            self._scanline_width/18,normal_dir))
+
+        self._trigBounds.append(bound_box)
 
     def _findIntersectionsInDirection(self,direction,start,curr_point=None):
         """Travel self._travel_width meters in direction, then scan for an intersect
@@ -316,6 +347,85 @@ class ScanArea(object):
                 found_intersect = False
         return dir_coords[1:]
 
+    def _findTriggerIntersectionsInDirection(self, direction, start, curr_point=None):
+        """Travel self._travel_width meters in direction, then scan for an intersect
+        with an edge both parallel and antiparallel to self._leading_edge.
+        If no intersect is found in either direction, we've exited the ScanArea
+        and can return
+        """
+        curr_point = curr_point or llmath.atDistAndBearing(
+            self._perimeter[0], self._travel_width, direction)
+        found_intersect = True
+
+        dir_coords = [start]
+        trig_coords = []
+
+        # check to make sure we're not going to be creating too many lines
+        max_point = llmath.atDistAndBearing(curr_point,
+                                            self._travel_width * self.MAX_LINES, direction)
+        for t_dir in self._travel_dir, self._opp_dir:
+            for edge in self._edges:
+                intersect = edge.intersection(max_point, t_dir)
+                if intersect:
+                    # there will be too many lines in the area, throw an error
+                    raise ScanLineDensityError
+
+        while found_intersect:
+            # don't check the leading edge
+            new_points = []
+            for t_dir in self._travel_dir, self._opp_dir:
+                for edge in self._edges:
+                    intersect = edge.intersection(curr_point, t_dir)
+                    if intersect:
+                        new_points.append(intersect['point'])
+                        found_intersect = True
+
+            curr_point = llmath.atDistAndBearing(
+                curr_point, self._travel_width, direction)
+            # append new_points to dir_coords such that the new_point closer
+            # to the last coord is added first
+            if len(new_points) > 0:
+                # if we cross multiple times (eg in a concave area), just take
+                # the two most extreme
+                if len(new_points) > 2:
+                    n = len(new_points)
+                    combos = [(i, j + 1, j - i) for i in range(n) for j in range(i + 1, n)]
+                    new_edge = sorted([Edge(*new_points[slice(*c)])
+                                       for c in combos], key=lambda x: x.length)[-1]
+                else:
+                    new_edge = Edge(*new_points)
+
+                new_points = new_edge.endpoints
+                #if self._find_bounds:
+                #    self._addScanlineBoundBox(new_edge)
+
+                # if we have an overshoot, stick 2 additional points beyond
+                # the extrema
+                trig_points = []
+                if self._overshoot > 0:
+                    tg1 = llmath.atDistAndBearing(new_points[0],
+                                                  self._overshoot * self._trigstart, (180 + new_edge.bearing) % 360)
+                    tg2 = llmath.atDistAndBearing(new_points[1],
+                                                  self._overshoot * self._trigend, new_edge.bearing)
+                    new_points = [tg1, *new_points, tg2]
+                    trig_points = [tg1,tg2]
+                else:
+                    trig_points = [new_points[0],new_points[1]]
+                if self._find_bounds:
+                    self._addTrigLineBoundBox(Edge(*trig_points))
+
+
+                dists_from_coords = new_edge.distanceTo(dir_coords[-1])
+                if dists_from_coords[0] > dists_from_coords[1]:
+                    dir_coords += new_points[::-1]
+                    trig_coords.append(trig_points[::-1])
+                else:
+                    dir_coords += new_points
+                    trig_coords.append(trig_points)
+            else:
+                found_intersect = False
+        return trig_coords
+
     def findScanLines(self):
         self._scanline_bounds = []
         self._coords = [self._home]
@@ -340,12 +450,16 @@ class ScanArea(object):
 
         self._coords += self._findIntersectionsInDirection(
                 parallel_dir1,self._perimeter[2],first_point)[::first_traverse]
+        self._trigCoords += self._findTriggerIntersectionsInDirection(
+            parallel_dir1, self._perimeter[2], first_point)[::first_traverse]
         if first_point is not None:
             first_point = llmath.atDistAndBearing(
                     self._center,self._travel_width,parallel_dir2)
 
         self._coords += self._findIntersectionsInDirection(
                 parallel_dir2,self._coords[-1],first_point)
+        self._trigCoords += self._findTriggerIntersectionsInDirection(
+            parallel_dir2, self._coords[-1], first_point)
 
         #flip things around so that we start by travelling the shorter
         #route from home at the beginning
@@ -354,6 +468,7 @@ class ScanArea(object):
         if end_dists[0] > end_dists[1]:
             print(len(self._coords),end=' ')
             self._coords = [self._home]+self._coords[1:][::-1]
+            self._trigCoords = self._trigCoords[::-1]
             print(len(self._coords))
         return self._coords
 
@@ -441,6 +556,9 @@ class ScanRegion(object):
         self._sidelap = 0
         self._coords = None
         self._overshoot = overshoot
+        self._trigstart = 0.5
+        self._trigend = 0.5
+        self._trigCoords = []
         self._vehicle = 'quadcopter'
         self._names = names
         self._find_bounds = find_scanline_bounds
@@ -480,6 +598,16 @@ class ScanRegion(object):
         self._overshoot = overshoot
         for sa in self.scanAreas:
             sa.setOvershoot(self._overshoot)
+
+    def setTrigStart(self, trigstart):
+        self._trigstart = trigstart
+        for sa in self.scanAreas:
+            sa.setTrigStart(self._trigstart)
+
+    def setTrigEnd(self, trigend):
+        self._trigend = trigend
+        for sa in self.scanAreas:
+            sa.setTrigEnd(self._trigend)
 
     def setSidelap(self,sidelap):
         self._sidelap = sidelap
@@ -540,6 +668,13 @@ class ScanRegion(object):
         #and returns to home at the end
         return flat_coords
 
+    def flattenTrigCoords(self):
+        flat_coords = []
+        for coords in self._trigCoords:
+            flat_coords += coords
+
+        return flat_coords
+
     def findScanLines(self):
         """Find the scan lines of each ScanArea, then chain them together"""
         self._coords = []
@@ -549,6 +684,7 @@ class ScanRegion(object):
             sa.setHome(home)
             new_coords = sa.findScanLines()[1:]
             self._coords.append(new_coords)
+            self._trigCoords.append(sa.trigCoords)
             home = self._coords[-1][-1]
         
         if self._vehicle == 'quadcopter':
@@ -581,6 +717,17 @@ class ScanRegion(object):
             boxes += sa.scanLineBoundBoxes
         return boxes
 
+    @property
+    def triggerBoundBoxes(self):
+        boxes = []
+        for sa in self._scanareas:
+            boxes += sa.triggerBoundBoxes
+        return boxes
+
+    @property
+    def triggerCoords(self):
+        return self._trigCoords
+
     def plot(self,show=True):
         for sa in self.scanAreas[:-1]:
             sa.plot(show=False,include=['perimeter','bounds'])
@@ -606,7 +753,7 @@ class ScanRegion(object):
             self.findScanLines()
         speed = self._spectrometer.squareScanSpeedAt(self._alt)
         SHPParse.flightPlanFromCoords(fname,
-                self.flattenCoords(),self.scanLineBoundBoxes,self._alt,speed)
+                self.flattenCoords(), self.scanLineBoundBoxes, self._alt, speed, self.flattenTrigCoords())
         
     def toProjectShapeFile(self,fname,units):
         """
@@ -620,7 +767,7 @@ class ScanRegion(object):
         print(self._spectrometer._name)
         SHPParse.planOutlineFromCoords(fname,perims,self._alt,self._overshoot,
                 self._bearing,self._sidelap,self._spectrometer,names,
-                self._vehicle,units)
+                self._vehicle,units,self._trigstart,self._trigend)
 
     @classmethod
     def fromProjectShapeFile(Cls,shp_fname,home=None):
